@@ -1,4 +1,4 @@
-from stochastic import StochasticProcess
+from engine.stochastic import StochasticProcess
 import numpy as np
 
 class GBM(StochasticProcess):

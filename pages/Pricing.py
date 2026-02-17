@@ -1,5 +1,5 @@
 import streamlit as st
-from ..engine.finance import GBM
+from engine.finance import GBM
 import numpy as np
 import plotly.graph_objects as go
 import time
