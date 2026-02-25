@@ -58,7 +58,9 @@ prob_bs = modelo.black_scholes_itm_probability(K = K, r = r, option_type = tipo_
 
 st.subheader(f"Resultados: {tipo_opcion} Europea")
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric (label="Precio de la Opción (Monte Carlo)", value=f"${precio_mc:.2f} €")
+nombre_mc = "Payoff Esperado descontado (P)" if es_mundo_real else "Precio de la Opción (MC)"
+
+col1.metric (label=nombre_mc, value=f"${precio_mc:.2f} €")
 col2.metric(label="Precio de la Opción (Black-Scholes)", value=f"${precio_bs:.2f} €")
 col3.metric(
     label="Diferencia (MC vs BS)", 
@@ -66,7 +68,7 @@ col3.metric(
     delta="Inconsistente en P" if es_mundo_real else f"{error_relativo:.2f} %",
     delta_color="normal" if error_relativo < 0.05 else "inverse"
 )
-col4.metric(label="Probabilidad de estar In The Money (MC)", value=f"{prob_itm:.2f} %")
+col4.metric(label="Prob. ITM (MC)", value=f"{prob_itm:.2f} %")
 col5.metric(
     label=f"Prob. ITM (BS - Medida {'P' if es_mundo_real else 'Q'})", 
     value=f"{prob_bs:.2f} %"
