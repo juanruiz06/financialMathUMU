@@ -112,7 +112,7 @@ fig.add_trace(go.Scatter(x=tiempos, y=hist_cartera, name="Valor Cartera de Répl
                          line=dict(color='#00ff00', width=3)))
 
 fig.add_trace(go.Scatter(x=tiempos, y=hist_bs_teorico, name="Valor Teórico de la Opción",
-                         line=dict(color='white', dash='dash', width=1)))
+                         line=dict(color='purple', dash='dash', width=1)))
 
 fig.update_layout(template="plotly_dark", title="Evolución de la Cartera vs Precio Teórico",
                   xaxis_title="Tiempo (Años)", yaxis_title="Valor (€)")
