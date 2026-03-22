@@ -1,0 +1,13 @@
+.git
+.github
+.DS_Store
+venv
+__pycache__
+*.pyc
+
+backend/node_modules
+backend/.npm
+
+node_modules
+npm-debug.log
+yarn-error.log

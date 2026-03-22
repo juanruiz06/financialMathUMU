@@ -18,19 +18,12 @@ st.sidebar.divider()
 tipo_opcion = st.sidebar.selectbox("Selecciona el tipo de opción para la cobertura", ("Call", "Put", "Straddle", "Binary"))
 frecuencia = st.sidebar.selectbox("Frecuencia de rebalanceo", ("Diaria", "Semanal", "Quincenal", "Mensual"))
 
-st.sidebar.subheader("Configuración de la simulación")
-medida = st.sidebar.radio("Medida de Probabilidad",
-         ["$\mathbb{Q}$ (Riesgo-Neutral)", "$\mathbb{P}$ (Mundo Real)"],
-         key = "medida_persistente",
-         help = "Q usa r como deriva, P usa mu.")
-
 if st.sidebar.button("Simular Delta Hedging"):
     st.rerun()
-es_riesgo_neutral = "$\\mathbb{Q}$ (Riesgo-Neutral)" in medida
 
 N_pasos = 252
 modelo = GBM(S0 = s0, mu = mu, sigma = sigma, T = T, N = N_pasos)
-S = modelo.simulate(n_paths=1, use_risk_neutral=es_riesgo_neutral).flatten()
+S = modelo.simulate(n_paths=1, use_risk_neutral=True, r=r).flatten()
 tiempos = modelo.time_grid
 
 freq_map = {"Diaria": 1, "Semanal": 5, "Quincenal": 10, "Mensual": 21}
@@ -39,10 +32,6 @@ if tipo_opcion == "Binary":
     st.warning(" **Caso Patológico:** La cobertura de opciones binarias es extremadamente inestable cerca del strike al vencimiento. " \
     "Se ha aplicado un límite temporal previo al strike a la Delta para estabilizar la simulación.")
 
-if es_riesgo_neutral:
-    st.info("**Modo Verificación ($\mathbb{Q}$):** El activo evoluciona con deriva $r$.")
-else:
-    st.warning("**Modo Real ($\mathbb{P}$):** El activo evoluciona con deriva $\mu$.")
 prima_inicial = modelo.black_scholes_price(K = K, r = r, option_type = tipo_opcion)
 delta_t = modelo.get_delta(S[0], K, r, sigma, T, option_type=tipo_opcion)
 caja = prima_inicial - delta_t * S[0]
