@@ -2,6 +2,7 @@ import streamlit as st
 from engine.finance import GBM
 import numpy as np
 import plotly.graph_objects as go
+import requests
 
 st.set_page_config(page_title="Delta Hedging", layout="wide")
 st.title("Cobertura Dinámica (Delta Hedging), Versión Beta")
@@ -23,8 +24,6 @@ if st.sidebar.button("Simular Delta Hedging"):
 
 N_pasos = 252
 modelo = GBM(S0 = s0, mu = mu, sigma = sigma, T = T, N = N_pasos)
-S = modelo.simulate(n_paths=1, use_risk_neutral=True, r=r).flatten()
-tiempos = modelo.time_grid
 
 freq_map = {"Diaria": 1, "Semanal": 5, "Quincenal": 10, "Mensual": 21}
 pasos = freq_map[frecuencia]
@@ -32,49 +31,78 @@ if tipo_opcion == "Binary":
     st.warning(" **Caso Patológico:** La cobertura de opciones binarias es extremadamente inestable cerca del strike al vencimiento. " \
     "Se ha aplicado un límite temporal previo al strike a la Delta para estabilizar la simulación.")
 
-prima_inicial = modelo.black_scholes_price(K = K, r = r, option_type = tipo_opcion)
-delta_t = modelo.get_delta(S[0], K, r, sigma, T, option_type=tipo_opcion)
-caja = prima_inicial - delta_t * S[0]
+payload = {
+    "S0": float(s0),
+    "mu": float(mu),
+    "sigma": float(sigma),
+    "T": float(T),
+    "K": float(K),
+    "r": float(r),
+    "tipo_opcion": tipo_opcion,
+    "frecuencia": int(pasos),
+    "use_risk_neutral": True,
+}
+api_url = "http://localhost:3000/api/hedging"
 
-hist_cartera = [prima_inicial]
-hist_bs_teorico = [prima_inicial]
-hist_deltas = [delta_t]
+try:
+    response = requests.post(api_url, json=payload, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+except requests.exceptions.ConnectionError:
+    st.error("No se pudo conectar con el backend de hedging. Verifica que el API Gateway esté activo en http://localhost:3000.")
+    st.stop()
+except requests.exceptions.HTTPError:
+    st.error("El backend devolvió un error al calcular el delta hedging. Inténtalo de nuevo en unos segundos.")
+    st.stop()
+except requests.exceptions.Timeout:
+    st.error("El backend tardó demasiado en responder para delta hedging.")
+    st.stop()
+except requests.exceptions.RequestException:
+    st.error("Ocurrió un problema de red al consultar el backend de hedging.")
+    st.stop()
+except ValueError:
+    st.error("La respuesta del backend de hedging no tiene un formato JSON válido.")
+    st.stop()
 
-for t in range(1, len(tiempos)):
-    dt_step = tiempos[t] - tiempos[t-1]
-    T_restante = max(T - tiempos[t], 0.0)
-    caja *= np.exp(r * dt_step)
+required_keys = ("tiempos", "hist_cartera", "hist_bs_teorico", "hist_deltas", "metrics")
+if any(key not in data for key in required_keys):
+    st.error("La respuesta del backend no contiene los campos esperados de delta hedging.")
+    st.stop()
 
-    if t%pasos == 0 or t == len(tiempos)-1:
-        nueva_delta = modelo.get_delta(S[t], K, r, sigma, T_restante, option_type=tipo_opcion)
-        compra_venta = nueva_delta - delta_t
-        caja -= compra_venta * S[t]
-        delta_t = nueva_delta
+try:
+    tiempos = np.array(data["tiempos"], dtype=float)
+    hist_cartera = np.array(data["hist_cartera"], dtype=float)
+    hist_bs_teorico = np.array(data["hist_bs_teorico"], dtype=float)
+    hist_deltas = np.array(data["hist_deltas"], dtype=float)
+except (TypeError, ValueError):
+    st.error("El backend devolvió datos de delta hedging en un formato inválido.")
+    st.stop()
 
-    valor_total_cartera = caja + delta_t * S[t]
-    hist_cartera.append(valor_total_cartera)
+if not (len(tiempos) == len(hist_cartera) == len(hist_bs_teorico) == len(hist_deltas)):
+    st.error("Las series devueltas por el backend no tienen la misma longitud.")
+    st.stop()
 
-    valor_bs_teorico = modelo.black_scholes_price(K, r, S[t], T_restante, option_type=tipo_opcion)
-    hist_bs_teorico.append(valor_bs_teorico)
+metrics = data["metrics"]
+if not isinstance(metrics, dict):
+    st.error("El backend devolvió métricas de delta hedging en un formato inválido.")
+    st.stop()
 
-    hist_deltas.append(delta_t)
+try:
+    pnl_final = float(metrics["pnl_final"])
+    tracking_error = float(metrics["tracking_error"])
+    error_vs_prima = float(metrics["error_vs_prima"])
+    error_vs_payoff = float(metrics["error_vs_payoff"])
+except (KeyError, TypeError, ValueError):
+    st.error("El backend no devolvió métricas completas para delta hedging.")
+    st.stop()
 
-
-valor_final = hist_cartera[-1]
-payoff_final = hist_bs_teorico[-1] 
-pnl_final = valor_final - payoff_final
-error_abs = abs(pnl_final)
-
-diff_temporal = np.abs(np.array(hist_cartera) - np.array(hist_bs_teorico))
-tracking_error = np.mean(diff_temporal) 
-error_vs_prima = (error_abs / prima_inicial * 100) if prima_inicial > 0 else 0.0
-error_vs_payoff = (error_abs / payoff_final * 100) if payoff_final > 0 else 0.0
+payoff_final = float(hist_bs_teorico[-1]) if len(hist_bs_teorico) > 0 else 0.0
 
 st.subheader(f"Análisis de Riesgos: {tipo_opcion} con Rebalanceo {frecuencia}")
 m1,m2,m3,m4 = st.columns(4)
 m1.metric(
     label="P&L Final", 
-    value=f"{error_abs:.2f} €", 
+    value=f"{pnl_final:.2f} €", 
     help="Resultado neto para el emisor. (Cartera Final - Payoff). Un valor positivo indica beneficio por encima de la prima cobrada."
 )
 
