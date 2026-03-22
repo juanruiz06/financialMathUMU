@@ -3,6 +3,7 @@ from engine.finance import GBM
 import numpy as np
 import plotly.graph_objects as go
 import time
+import requests
 
 st.set_page_config(page_title="Simulación de Procesos Estocásticos", layout="wide")
 st.title("Simulación de Procesos Estocásticos")
@@ -31,13 +32,65 @@ es_mundo_real = "Mundo Real" in medida
 use_risk_neutral = not es_mundo_real
 modelo = GBM(S0 = s0, mu = mu, sigma = sigma, T = t_final, N = 252)
 start_time = time.perf_counter()
-precios = modelo.simulate(n_paths=n_sims, use_risk_neutral=use_risk_neutral, r = r) # Si estamos en riesgo-neutral, la deriva será r, si estamos en mundo real, la deriva será mu
+payload = {
+    "S0": float(s0),
+    "mu": float(mu),
+    "sigma": float(sigma),
+    "T": float(t_final),
+    "N": int(modelo.N),
+    "n_paths": int(n_sims),
+    "K": float(K),
+    "r": float(r),
+    "tipo_opcion": tipo_opcion,
+}
+api_url = "http://localhost:3000/api/pricing"
+try:
+    response = requests.post(api_url, json=payload, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+except requests.exceptions.ConnectionError:
+    st.error("No se pudo conectar con el backend de pricing. Verifica que el API Gateway esté activo en http://localhost:3000.")
+    st.stop()
+except requests.exceptions.HTTPError:
+    st.error("El backend devolvió un error al calcular el pricing. Inténtalo de nuevo en unos segundos.")
+    st.stop()
+except requests.exceptions.RequestException:
+    st.error("Ocurrió un problema de red al consultar el backend de pricing.")
+    st.stop()
+except ValueError:
+    st.error("La respuesta del backend no tiene un formato JSON válido.")
+    st.stop()
+
+if "simulated_paths" not in data or "black_scholes_price" not in data:
+    st.error("La respuesta del backend no contiene los campos esperados de pricing.")
+    st.stop()
+
+try:
+    precios = np.array(data["simulated_paths"], dtype=float)
+except (TypeError, ValueError):
+    st.error("El backend devolvió una simulación en un formato inválido.")
+    st.stop()
+
+# Normalizamos a (N+1, n_paths), que es la forma esperada por el resto de la UI.
+if precios.ndim == 1:
+    precios = precios.reshape(-1, 1)
+elif precios.ndim == 2 and precios.shape[0] != len(modelo.time_grid) and precios.shape[1] == len(modelo.time_grid):
+    precios = precios.T
+elif precios.ndim != 2:
+    st.error("La simulación devuelta por el backend no tiene una forma compatible.")
+    st.stop()
+
+if precios.shape[0] != len(modelo.time_grid):
+    st.error("La simulación devuelta por el backend no coincide con la grilla temporal esperada.")
+    st.stop()
+
 end_time = time.perf_counter()
 
 duration = end_time - start_time
+api_latency_ms = response.elapsed.total_seconds() * 1000
 
 precio_mc = modelo.calculate_mc_price(K = K, r = r, simulated_paths = precios, option_type = tipo_opcion)
-precio_bs = modelo.black_scholes_price(K = K, r = r, option_type = tipo_opcion)
+precio_bs = float(data["black_scholes_price"])
 diff = abs(precio_mc - precio_bs)
 
 media_precios = (precio_mc + precio_bs) / 2
@@ -53,10 +106,11 @@ elif tipo_opcion == "Straddle":
 elif tipo_opcion == "Binary":
     itm_count = np.sum(precios_finales > K) # Para la opción binaria, el payoff es 1 si el precio final supera el strike, y 0 en caso contrario
 
-prob_itm = (itm_count / n_sims)*100
+prob_itm = (itm_count / precios.shape[1])*100
 prob_bs = modelo.black_scholes_itm_probability(K = K, r = r, option_type = tipo_opcion, use_real_world=es_mundo_real)
 
 st.subheader(f"Resultados: {tipo_opcion} Europea")
+st.caption(f"Backend de pricing: {api_url} | Latencia API: {api_latency_ms:.0f} ms")
 col1, col2, col3, col4, col5 = st.columns(5)
 nombre_mc = "Payoff Esperado descontado (P)" if es_mundo_real else "Precio de la Opción (MC)"
 
@@ -76,10 +130,10 @@ col5.metric(
 
 with st.expander("Detalles de la Simulación"):
     st.write(f"Tiempo de simulación: {duration:.2f} segundos")
-    st.write(f"Número de simulaciones: {n_sims}")
+    st.write(f"Número de simulaciones: {precios.shape[1]}")
 
 fig = go.Figure()
-for i in range(min(n_show, n_sims)):
+for i in range(min(n_show, precios.shape[1])):
     fig.add_trace(go.Scatter(x=modelo.time_grid, y=precios[:,i],
                               mode='lines', line=dict(width=1), showlegend=False))
 

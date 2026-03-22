@@ -11,6 +11,7 @@ class GBM(StochasticProcess):
     def simulate(self, n_paths=1, use_risk_neutral = True, r = 0.03):
         drift = r if use_risk_neutral else self.mu
         W = self.generate_Brownian(n_paths)
+        W = np.vstack([np.zeros((1, n_paths)), W])
         t = self.time_grid.reshape(-1,1)
         S = self.S0 * np.exp((drift - 0.5 * self.sigma**2) * t + self.sigma * W)
         return S
