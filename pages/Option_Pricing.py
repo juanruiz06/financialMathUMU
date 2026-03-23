@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import time
 import requests
+import os
 
 st.set_page_config(page_title="Simulación de Procesos Estocásticos", layout="wide")
 st.title("Simulación de Procesos Estocásticos")
@@ -38,7 +39,8 @@ payload = {
     "r": float(r),
     "tipo_opcion": tipo_opcion,
 }
-api_url = "http://localhost:3000/api/pricing"
+backend_base_url = os.getenv("BACKEND_URL", "http://localhost:3000").rstrip("/")
+api_url = f"{backend_base_url}/api/pricing"
 try:
     response = requests.post(api_url, json=payload, timeout=30)
     response.raise_for_status()

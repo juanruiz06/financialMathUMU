@@ -3,6 +3,7 @@ from engine.finance import GBM
 import numpy as np
 import plotly.graph_objects as go
 import requests
+import os
 
 st.set_page_config(page_title="Delta Hedging", layout="wide")
 st.title("Cobertura Dinámica (Delta Hedging), Versión Beta")
@@ -42,7 +43,8 @@ payload = {
     "frecuencia": int(pasos),
     "use_risk_neutral": True,
 }
-api_url = "http://localhost:3000/api/hedging"
+backend_base_url = os.getenv("BACKEND_URL", "http://localhost:3000").rstrip("/")
+api_url = f"{backend_base_url}/api/hedging"
 
 try:
     response = requests.post(api_url, json=payload, timeout=30)
