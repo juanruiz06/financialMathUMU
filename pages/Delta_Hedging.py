@@ -6,7 +6,7 @@ import requests
 import os
 
 st.set_page_config(page_title="Delta Hedging", layout="wide")
-st.title("Cobertura Dinámica (Delta Hedging), Versión Beta")
+st.title("Cobertura Dinámica (Delta Hedging)")
 
 st.sidebar.header("Parámetros del Mercado")
 s0 = st.sidebar.number_input("Precio inicial (S0)", value=100.0)
