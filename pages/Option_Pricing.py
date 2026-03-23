@@ -10,8 +10,9 @@ st.set_page_config(page_title="Simulación de Procesos Estocásticos", layout="w
 st.title("Simulación de Procesos Estocásticos")
 
 st.sidebar.header("Parámetros de la Simulación")
-n_sims = st.sidebar.number_input("Número de Simulaciones", 1,50000, 10000)
-n_show = st.sidebar.slider("Número de Simulaciones a Mostrar", 1, 100, 50)
+n_sims = st.sidebar.number_input("Número de Simulaciones", 1, 2000, 100)
+n_show_default = min(50, max(1, int(n_sims * 0.1)))
+n_show = st.sidebar.slider("Número de Simulaciones a Mostrar", 1, min(100, int(n_sims)), n_show_default)
 s0 = st.sidebar.number_input("Precio inicial (S0)", value=100.0)
 mu = st.sidebar.slider("Deriva (mu)", min_value=-1.0, max_value=1.0, value=0.05)
 sigma = st.sidebar.slider("Volatilidad (sigma)", min_value=0.0, max_value=1.0, value=0.2)
@@ -35,6 +36,7 @@ payload = {
     "T": float(t_final),
     "N": int(modelo.N),
     "n_paths": int(n_sims),
+    "n_show": int(n_show),
     "K": float(K),
     "r": float(r),
     "tipo_opcion": tipo_opcion,
@@ -58,7 +60,7 @@ except ValueError:
     st.error("La respuesta del backend no tiene un formato JSON válido.")
     st.stop()
 
-if "simulated_paths" not in data or "black_scholes_price" not in data:
+if "simulated_paths" not in data or "final_prices" not in data or "black_scholes_price" not in data:
     st.error("La respuesta del backend no contiene los campos esperados de pricing.")
     st.stop()
 
@@ -66,6 +68,12 @@ try:
     precios = np.array(data["simulated_paths"], dtype=float)
 except (TypeError, ValueError):
     st.error("El backend devolvió una simulación en un formato inválido.")
+    st.stop()
+
+try:
+    precios_finales = np.array(data["final_prices"], dtype=float)
+except (TypeError, ValueError):
+    st.error("El backend devolvió los precios finales en un formato inválido.")
     st.stop()
 
 # Normalizamos a (N+1, n_paths), que es la forma esperada por el resto de la UI.
@@ -86,14 +94,24 @@ end_time = time.perf_counter()
 duration = end_time - start_time
 api_latency_ms = response.elapsed.total_seconds() * 1000
 
-precio_mc = modelo.calculate_mc_price(K = K, r = r, simulated_paths = precios, option_type = tipo_opcion)
+if tipo_opcion == "Call":
+    payoffs = np.maximum(precios_finales - K, 0)
+elif tipo_opcion == "Put":
+    payoffs = np.maximum(K - precios_finales, 0)
+elif tipo_opcion == "Straddle":
+    payoffs = np.abs(precios_finales - K)
+elif tipo_opcion == "Binary":
+    payoffs = (precios_finales > K).astype(float)
+else:
+    payoffs = np.zeros_like(precios_finales)
+
+precio_mc = float(np.exp(-r * t_final) * np.mean(payoffs))
 precio_bs = float(data["black_scholes_price"])
 diff = abs(precio_mc - precio_bs)
 
 media_precios = (precio_mc + precio_bs) / 2
 error_relativo = diff / media_precios if media_precios > 0 else 0.0
 
-precios_finales = precios[-1,:]
 if tipo_opcion == "Call":
     itm_count = np.sum(precios_finales > K)
 elif tipo_opcion == "Put":
@@ -103,7 +121,7 @@ elif tipo_opcion == "Straddle":
 elif tipo_opcion == "Binary":
     itm_count = np.sum(precios_finales > K) # Para la opción binaria, el payoff es 1 si el precio final supera el strike, y 0 en caso contrario
 
-prob_itm = (itm_count / precios.shape[1])*100
+prob_itm = (itm_count / len(precios_finales))*100 if len(precios_finales) > 0 else 0.0
 prob_bs = modelo.black_scholes_itm_probability(K = K, r = r, option_type = tipo_opcion, use_real_world=False)
 
 st.subheader(f"Resultados: {tipo_opcion} Europea")
@@ -126,7 +144,7 @@ col5.metric(
 
 with st.expander("Detalles de la Simulación"):
     st.write(f"Tiempo de simulación: {duration:.2f} segundos")
-    st.write(f"Número de simulaciones: {precios.shape[1]}")
+    st.write(f"Número de simulaciones: {len(precios_finales)}")
 
 fig = go.Figure()
 for i in range(min(n_show, precios.shape[1])):
@@ -139,8 +157,7 @@ fig.update_layout(template = "plotly_dark", title="Simulación de un Proceso de 
 st.plotly_chart(fig, use_container_width=True)
 
 st.subheader("Distribución de precios al vencer")
-n_bins = max(20, min(int(np.sqrt(n_sims)), 100))
-precios_finales = precios[-1,:]
+n_bins = max(20, min(int(np.sqrt(len(precios_finales))), 100))
 fig_hist = go.Figure(data=[go.Histogram(x=precios_finales, nbinsx=n_bins, marker_color='blue', opacity=0.75)])
 fig_hist.update_layout(template = "plotly_dark", title="Precio Final")
 st.plotly_chart(fig_hist, use_container_width=True)

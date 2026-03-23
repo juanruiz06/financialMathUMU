@@ -39,6 +39,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--T", type=float)
     p.add_argument("--N", type=int)
     p.add_argument("--n_paths", type=int, default=1)
+    p.add_argument("--n_show", type=int, default=50)
     p.add_argument("--K", type=float)
     p.add_argument("--r", type=float)
     p.add_argument(
@@ -67,6 +68,9 @@ def _run_pricing(args: argparse.Namespace) -> dict:
     )
     gbm = GBM(S0=args.S0, mu=args.mu, sigma=args.sigma, T=args.T, N=args.N)
     paths = gbm.simulate(n_paths=args.n_paths, use_risk_neutral=True, r=args.r)
+    n_show = max(1, min(int(args.n_show), paths.shape[1]))
+    paths_to_show = paths[:, :n_show].tolist()
+    final_prices = paths[-1, :].tolist()
     bs = gbm.black_scholes_price(
         K=args.K, r=args.r, option_type=args.tipo_opcion
     )
@@ -79,7 +83,8 @@ def _run_pricing(args: argparse.Namespace) -> dict:
         "K": args.K,
         "r": args.r,
         "tipo_opcion": args.tipo_opcion,
-        "simulated_paths": paths.tolist(),
+        "simulated_paths": paths_to_show,
+        "final_prices": final_prices,
         "black_scholes_price": float(bs),
     }
 

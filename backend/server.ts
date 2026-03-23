@@ -15,6 +15,7 @@ export const PricingRequestSchema = z.object({
   T: z.number(),
   N: z.number().int(),
   n_paths: z.number().int().optional(),
+  n_show: z.number().int().positive().optional(),
   K: z.number(),
   r: z.number(),
   tipo_opcion: z.enum(["Call", "Put", "Straddle", "Binary"]),
@@ -46,6 +47,7 @@ const PricingResponseSchema = z.object({
   r: z.number(),
   tipo_opcion: z.enum(["Call", "Put", "Straddle", "Binary"]),
   simulated_paths: z.array(z.array(z.number())),
+  final_prices: z.array(z.number()),
   black_scholes_price: z.number(),
 });
 
@@ -96,6 +98,9 @@ function buildCliCommand(body: PricingRequest): string {
   ];
   if (body.n_paths !== undefined) {
     parts.push("--n_paths", String(body.n_paths));
+  }
+  if (body.n_show !== undefined) {
+    parts.push("--n_show", String(body.n_show));
   }
   return parts.map(shellQuote).join(" ");
 }
