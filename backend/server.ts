@@ -9,14 +9,14 @@ import { z, ZodError } from "zod";
 const execAsync = promisify(exec);
 
 export const PricingRequestSchema = z.object({
-  S0: z.number(),
+  S0: z.number().positive(),
   mu: z.number(),
-  sigma: z.number(),
-  T: z.number(),
-  N: z.number().int(),
-  n_paths: z.number().int().optional(),
+  sigma: z.number().positive(),
+  T: z.number().positive(),
+  N: z.number().int().min(1),
+  n_paths: z.number().int().min(1).max(50000).optional(),
   n_show: z.number().int().positive().optional(),
-  K: z.number(),
+  K: z.number().positive(),
   r: z.number(),
   tipo_opcion: z.enum(["Call", "Put", "Straddle", "Binary"]),
 });
@@ -24,14 +24,14 @@ export const PricingRequestSchema = z.object({
 export type PricingRequest = z.infer<typeof PricingRequestSchema>;
 
 export const HedgingRequestSchema = z.object({
-  S0: z.number(),
+  S0: z.number().positive(),
   mu: z.number(),
-  sigma: z.number(),
-  T: z.number(),
-  K: z.number(),
+  sigma: z.number().positive(),
+  T: z.number().positive(),
+  K: z.number().positive(),
   r: z.number(),
   tipo_opcion: z.enum(["Call", "Put", "Straddle", "Binary"]),
-  frecuencia: z.number().int().positive(),
+  frecuencia: z.number().int().min(1),
   use_risk_neutral: z.boolean(),
 });
 
@@ -143,11 +143,12 @@ async function runPricingCli(body: PricingRequest): Promise<PricingResponse> {
   const { stdout, stderr } = await execAsync(cmd, {
     encoding: "utf8",
     maxBuffer: 50 * 1024 * 1024,
+    timeout: 30000,
   });
 
   const errText = stderr.trim();
   if (errText.length > 0) {
-    throw new Error(`Python stderr: ${errText}`);
+    console.warn(`Python stderr/warning: ${errText}`);
   }
 
   const raw: unknown = JSON.parse(stdout);
@@ -159,11 +160,12 @@ async function runHedgingCli(body: HedgingRequest): Promise<HedgingResponse> {
   const { stdout, stderr } = await execAsync(cmd, {
     encoding: "utf8",
     maxBuffer: 50 * 1024 * 1024,
+    timeout: 30000,
   });
 
   const errText = stderr.trim();
   if (errText.length > 0) {
-    throw new Error(`Python stderr: ${errText}`);
+    console.warn(`Python stderr/warning: ${errText}`);
   }
 
   const raw: unknown = JSON.parse(stdout);
@@ -172,6 +174,10 @@ async function runHedgingCli(body: HedgingRequest): Promise<HedgingResponse> {
 
 const app = express();
 app.use(express.json());
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK", uptime: process.uptime() });
+});
 
 app.post("/api/pricing", async (req: Request, res: Response) => {
   let body: PricingRequest;
@@ -208,7 +214,7 @@ app.post("/api/hedging", async (req: Request, res: Response) => {
     }
     console.error("Unexpected validation error:", err);
     return res.status(500).json({
-      message: "Error interno calculando el pricing",
+      message: "Error interno calculando el hedging",
     });
   }
 
@@ -218,7 +224,7 @@ app.post("/api/hedging", async (req: Request, res: Response) => {
   } catch (err: unknown) {
     console.error("Hedging CLI error:", err);
     return res.status(500).json({
-      message: "Error interno calculando el pricing",
+      message: "Error interno calculando el hedging",
     });
   }
 });
